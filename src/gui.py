@@ -234,6 +234,7 @@ class MikroTikScannerGUI:
         ttk.Label(self.ip_frame, text="IP или CIDR:").grid(row=0, column=0, sticky="w")
         self.ip_entry = ttk.Entry(self.ip_frame, textvariable=self.ip_var, width=30)
         self.ip_entry.grid(row=0, column=1, sticky="ew")
+        self.setup_entry_context_menu(self.ip_entry)  # Добавляем контекстное меню
 
         # Ввод файла
         self.file_frame = ttk.Frame(self.exploit_frame)
@@ -305,14 +306,17 @@ class MikroTikScannerGUI:
         ttk.Label(proxy_frame, text="Прокси (ip:port):").grid(row=1, column=0, sticky="w")
         self.proxy_entry = ttk.Entry(proxy_frame, textvariable=self.proxy_var, width=20)
         self.proxy_entry.grid(row=1, column=1, sticky="w")
+        self.setup_entry_context_menu(self.proxy_entry)  # Добавляем контекстное меню
 
         ttk.Label(proxy_frame, text="Логин:").grid(row=2, column=0, sticky="w")
         self.proxy_user_entry = ttk.Entry(proxy_frame, textvariable=self.proxy_user)
         self.proxy_user_entry.grid(row=2, column=1, sticky="w")
+        self.setup_entry_context_menu(self.proxy_user_entry)  # Добавляем контекстное меню
 
         ttk.Label(proxy_frame, text="Пароль:").grid(row=2, column=2, sticky="w")
         self.proxy_pass_entry = ttk.Entry(proxy_frame, textvariable=self.proxy_pass)
         self.proxy_pass_entry.grid(row=2, column=3, sticky="w")
+        self.setup_entry_context_menu(self.proxy_pass_entry)  # Добавляем контекстное меню
 
         # Потоки проверки прокси
         proxy_threads_frame = ttk.Frame(self.proxy_frame)
@@ -409,12 +413,18 @@ class MikroTikScannerGUI:
         self.root.bind('<Control-p>', lambda e: self.toggle_pause_scan())
         self.root.bind('<Control-t>', lambda e: self.test_current_proxy())
         self.root.bind('<Control-c>', lambda e: self.copy_text())
+        self.root.bind('<Control-v>', lambda e: self.paste_text())  # Добавляем привязку для Ctrl+V
         self.root.bind('<Control-q>', lambda e: self.quit_application())
 
     def setup_context_menu(self):
         self.context_menu = tk.Menu(self.output_text, tearoff=0)
         self.context_menu.add_command(label="Копировать", command=self.copy_text)
         self.output_text.bind("<Button-3>", self.show_context_menu)
+
+    def setup_entry_context_menu(self, entry):
+        context_menu = tk.Menu(entry, tearoff=0)
+        context_menu.add_command(label="Вставить", command=lambda: self.paste_text())
+        entry.bind("<Button-3>", lambda event: context_menu.post(event.x_root, event.y_root))
 
     def show_context_menu(self, event):
         self.context_menu.post(event.x_root, event.y_root)
@@ -427,6 +437,19 @@ class MikroTikScannerGUI:
             self.log_queue.put(("Текст скопирован в буфер обмена", "info"))
         except tk.TclError:
             self.log_queue.put(("Ошибка: Ничего не выделено для копирования", "warning"))
+        return "break"
+
+    def paste_text(self, event=None):
+        try:
+            widget = self.root.focus_get()  # Получаем виджет, который в фокусе
+            if isinstance(widget, (tk.Entry, ttk.Entry)):  # Проверяем, что это поле ввода
+                widget.delete(0, tk.END)  # Очищаем текущее содержимое
+                widget.insert(0, self.root.clipboard_get())  # Вставляем текст из буфера
+                self.log_queue.put(("Текст вставлен из буфера обмена", "info"))
+            else:
+                self.log_queue.put(("Ошибка: Фокус не на поле ввода", "warning"))
+        except tk.TclError:
+            self.log_queue.put(("Ошибка: Буфер обмена пуст", "warning"))
         return "break"
 
     def toggle_input_mode(self):
@@ -1134,7 +1157,7 @@ class MikroTikScannerGUI:
             has_data = True
 
         # Настройки графика
-        ax.set_xlabel("Статус (1 = Уязвимые/Валидные, -1 = Неуязвимые/Невалидные)")
+        ax.set_xlabel("Статус (1 = Уязвимые/Валид_REVISION_1.0ные, -1 = Неуязвимые/Невалидные)")
         ax.set_ylabel("Количество")
         ax.set_title("Статистика по времени")
         ax.grid(True)
