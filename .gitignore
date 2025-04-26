@@ -1,0 +1,39 @@
+# Виртуальные окружения
+venv/
+.env/
+env/
+
+# Временные файлы Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Файлы PyInstaller
+build/
+dist/
+*.spec
+
+# Локальные файлы конфигурации и результатов
+config.ini
+results.txt
+success_ips.txt
+valid_proxies.txt
+invalid_proxies.txt
+stats.png
+
+# IDE и редакторы
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Логи и временные файлы
+*.log
+*.tmp
+*.bak
+
+# Системные файлы
+.DS_Store
+Thumbs.db
