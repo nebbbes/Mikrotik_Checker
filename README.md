@@ -59,8 +59,8 @@
 1. **Склонируйте репозиторий**:
    Откройте PowerShell (или командную строку) и выполните:
    ```
-   git clone https://github.com/nebbbes/mikrotik
-   cd mikrotik
+   git clone https://github.com/nebbbes/Mikrotik_Checker
+   cd Mikrotik_Checker
    ```
 
 2. **Установите зависимости**:
@@ -83,7 +83,7 @@
    ```
 2. Выполните сборку:
    ```
-   pyinstaller --onefile --noconsole --add-data "src/fon.png;." --add-data "src/icon.png;." --name proga src/gui.py
+   pyinstaller --onefile --noconsole --add-data "fon.png;." --add-data "icon.png;." --name proga gui.py
    ```
 3. Исполняемый файл появится в папке `dist/`. Запустите его двойным кликом.
 
@@ -155,6 +155,9 @@
 
 ## Контакты
 - Автор: nebbbes
-- Репозиторий: [https://github.com/nebbbes/mikrotik](https://github.com/nebbbes/mikrotik)
+- Репозиторий: [https://github.com/nebbbes/mikrotik](https://github.com/nebbbes/)
+- ## Скриншот приложения![screenshot](https://github.com/user-attachments/assets/6c3116f5-b009-438c-afe9-e075062b5ef1)
+
+![Скриншот приложения](screenshot.jpg)
 
 ⚠️ **Напоминание**: Используйте этот инструмент ответственно и только с разрешения владельцев оборудования!
