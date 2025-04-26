@@ -160,7 +160,7 @@
 ## Контакты
 - Автор: nebbbes
 - Репозиторий: [https://github.com/nebbbes/](https://github.com/nebbbes/)
-- ## Скриншот приложения![screenshot](https://github.com/user-attachments/assets/6c3116f5-b009-438c-afe9-e075062b5ef1)
+- ## Скриншот приложения![screenshot]
 
 
 ⚠️ **Напоминание**: Используйте этот инструмент ответственно и только с разрешения владельцев оборудования!
