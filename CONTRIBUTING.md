@@ -5,11 +5,11 @@
 ## Как внести вклад
 
 1. **Склонируйте репозиторий**:
-   - Сделайте форк репозитория на GitHub: [https://github.com/nebbbes/mikrotik](https://github.com/nebbbes/mikrotik).
+   - Сделайте форк репозитория на GitHub: [https://github.com/nebbbes/Mikrotik_Checker](https://github.com/nebbbes/Mikrotik_Checker).
    - Склонируйте его на свой компьютер:
      ```
-     git clone https://github.com/ваш-username/mikrotik.git
-     cd mikrotik
+     git clone https://github.com/ваш-username/Mikrotik_Checker
+     cd Mikrotik_Checker
      ```
 
 2. **Создайте
