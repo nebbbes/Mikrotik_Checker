@@ -36,8 +36,12 @@
      ```
      chain=input in-interface=wan protocol=tcp dst-port=8291 action=drop
      ```
+## Скачать портативную версию для Windows x64
 
-## Установка
+Последняя версия программы доступна в [релизах](https://github.com/nebbbes/Mikrotik_Checker/releases/tag/v3.0.0).  
+Скачайте `Mikrotik_Checker_v3.0.exe` для использования.
+
+## Сборка из исходников
 
 ### Установка инструментов (Windows)
 Для работы программы вам нужно установить несколько инструментов:
