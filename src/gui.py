@@ -346,13 +346,13 @@ class MikroTikScannerGUI:
             self.fon_image = Image.open(fon_path)
             self.fon_photo = ImageTk.PhotoImage(self.fon_image)
             self.fon_label = ttk.Label(self.proxy_frame, image=self.fon_photo)
-            self.fon_label.grid(row=4, column=0, padx=10, pady=5, sticky="nsew")
+            self.fon_label.grid(row=6, column=0, padx=200, pady=5, sticky="nsew")
             self.proxy_frame.bind("<Configure>", self.resize_image)
         except Exception as e:
             self.log_queue.put((f"Ошибка загрузки изображения fon.png: {str(e)}", "error"))
             self.fon_label = ttk.Label(self.proxy_frame, text="Не удалось загрузить изображение")
-            self.fon_label.grid(row=4, column=0, padx=10, pady=5, sticky="nsew")
-
+            self.fon_label.grid(row=4, column=0, padx=200, pady=5, sticky="nsew")
+            
         output_frame = ttk.Frame(self.main_frame)
         output_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
         output_frame.columnconfigure(0, weight=1)
