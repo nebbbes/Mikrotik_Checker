@@ -14,8 +14,6 @@ import json
 from queue import Queue
 import requests
 import configparser
-from collections import defaultdict
-import matplotlib.pyplot as plt
 from PIL import Image, ImageTk
 import pystray
 from pystray import MenuItem as item
@@ -77,12 +75,13 @@ class MikroTikScannerGUI:
         self.port_var = tk.StringVar(value=self.config.get('Settings', 'port', fallback="8291"))
         self.file_var = tk.StringVar(value=self.config.get('Settings', 'last_file', fallback="Файл не выбран"))
         self.proxy_type = tk.StringVar(value=self.config.get('Settings', 'proxy_type', fallback="socks5"))
-        self.proxy_var = tk.StringVar(value=self.config.get('Settings', 'proxy', fallback=""))
+        self.proxy_ip_var = tk.StringVar(value=self.config.get('Settings', 'proxy_ip', fallback=""))
+        self.proxy_port_var = tk.StringVar(value=self.config.get('Settings', 'proxy_port', fallback=""))
         self.proxy_user = tk.StringVar(value=self.config.get('Settings', 'proxy_user', fallback=""))
         self.proxy_pass = tk.StringVar(value=self.config.get('Settings', 'proxy_pass', fallback=""))
         self.scan_threads = tk.IntVar(value=int(self.config.get('Settings', 'scan_threads', fallback=10)))
         self.proxy_threads = tk.IntVar(value=int(self.config.get('Settings', 'proxy_threads', fallback=10)))
-        self.stats_time_format = tk.StringVar(value="day")  # Формат времени для статистики
+        self.use_proxy_for_scan = tk.BooleanVar(value=False)
 
         # Переменные состояния
         self.stop_scan = False
@@ -92,20 +91,14 @@ class MikroTikScannerGUI:
         self.scan_queue = Queue()
         self.proxy_queue = Queue()
         self.successful_ips = []
-        self.geo_data = defaultdict(list)
-        self.router_versions = defaultdict(int)
+        self.geo_data = {}
+        self.router_versions = {}
         self.valid_proxy_count = 0
         self.start_time = None
         self.scanned_count = 0
         self.total_count = 0
         self.countries = ["Все"]
         self.asns = ["Все"]
-
-        # Списки для статистики с временными метками
-        self.vulnerable_timestamps = []  # Уязвимые устройства
-        self.non_vulnerable_timestamps = []  # Неуязвимые устройства
-        self.valid_proxy_timestamps = []  # Валидные прокси
-        self.invalid_proxy_timestamps = []  # Невалидные прокси
 
         # Настройка интерфейса
         self.setup_ui()
@@ -115,30 +108,25 @@ class MikroTikScannerGUI:
         self.check_queues()
 
     def load_window_geometry(self):
-        # Проверяем, есть ли сохранённые параметры в config.ini
         if (self.config.has_option('Settings', 'window_width') and 
             self.config.has_option('Settings', 'window_height') and
             self.config.has_option('Settings', 'window_x') and
             self.config.has_option('Settings', 'window_y')):
-            # Загружаем сохранённые размеры и положение
             width = self.config.get('Settings', 'window_width', fallback="800")
             height = self.config.get('Settings', 'window_height', fallback="600")
             x = self.config.get('Settings', 'window_x', fallback="0")
             y = self.config.get('Settings', 'window_y', fallback="0")
             self.root.geometry(f"{width}x{height}+{x}+{y}")
         else:
-            # При первом запуске максимизируем окно
             self.root.state('zoomed')
 
     def save_window_geometry(self):
-        # Сохраняем текущие размеры и положение окна, если оно не максимизировано
         if self.root.state() != 'zoomed':
             self.config['Settings']['window_width'] = str(self.root.winfo_width())
             self.config['Settings']['window_height'] = str(self.root.winfo_height())
             self.config['Settings']['window_x'] = str(self.root.winfo_x())
             self.config['Settings']['window_y'] = str(self.root.winfo_y())
         else:
-            # Если окно максимизировано, можно сохранить значения по умолчанию
             self.config['Settings']['window_width'] = "800"
             self.config['Settings']['window_height'] = "600"
             self.config['Settings']['window_x'] = "0"
@@ -148,7 +136,6 @@ class MikroTikScannerGUI:
 
     def setup_system_tray(self):
         try:
-            # Определяем путь к icon.png
             if getattr(sys, 'frozen', False):
                 base_path = sys._MEIPASS
             else:
@@ -175,10 +162,9 @@ class MikroTikScannerGUI:
         self.proxy_test_cancel = True
         if self.icon:
             self.icon.stop()
-        # Сохраняем геометрию окна перед закрытием
         self.save_window_geometry()
-        self.root.quit()  # Завершаем цикл mainloop
-        self.root.destroy()  # Уничтожаем окно
+        self.root.quit()
+        self.root.destroy()
 
     def create_default_config(self):
         self.config['Settings'] = {
@@ -186,7 +172,8 @@ class MikroTikScannerGUI:
             'port': '8291',
             'last_file': '',
             'proxy_type': 'socks5',
-            'proxy': '',
+            'proxy_ip': '',
+            'proxy_port': '',
             'proxy_user': '',
             'proxy_pass': '',
             'scan_threads': '10',
@@ -204,7 +191,8 @@ class MikroTikScannerGUI:
             'port': self.port_var.get(),
             'last_file': self.file_var.get(),
             'proxy_type': self.proxy_type.get(),
-            'proxy': self.proxy_var.get(),
+            'proxy_ip': self.proxy_ip_var.get(),
+            'proxy_port': self.proxy_port_var.get(),
             'proxy_user': self.proxy_user.get(),
             'proxy_pass': self.proxy_pass.get(),
             'scan_threads': str(self.scan_threads.get()),
@@ -219,7 +207,6 @@ class MikroTikScannerGUI:
 
     def setup_ui(self):
         # --- Левая колонка (Эксплойт) ---
-        # Выбор режима ввода
         input_frame = ttk.LabelFrame(self.exploit_frame, text="Режим ввода", padding=10)
         input_frame.grid(row=0, column=0, columnspan=2, padx=10, pady=5, sticky="we")
 
@@ -228,15 +215,13 @@ class MikroTikScannerGUI:
         ttk.Radiobutton(input_frame, text="Файл", value="file", variable=self.input_mode,
                        command=self.toggle_input_mode).grid(row=0, column=1, padx=5)
 
-        # Ввод IP
         self.ip_frame = ttk.Frame(self.exploit_frame)
         self.ip_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="we")
         ttk.Label(self.ip_frame, text="IP или CIDR:").grid(row=0, column=0, sticky="w")
         self.ip_entry = ttk.Entry(self.ip_frame, textvariable=self.ip_var, width=30)
         self.ip_entry.grid(row=0, column=1, sticky="ew")
-        self.setup_entry_context_menu(self.ip_entry)  # Добавляем контекстное меню
+        self.setup_entry_context_menu(self.ip_entry)
 
-        # Ввод файла
         self.file_frame = ttk.Frame(self.exploit_frame)
         self.file_frame.grid(row=2, column=0, columnspan=2, padx=10, pady=5, sticky="we")
         ttk.Label(self.file_frame, text="Файл со списком IP:").grid(row=0, column=0, sticky="w")
@@ -245,17 +230,18 @@ class MikroTikScannerGUI:
         self.file_label = ttk.Label(self.file_frame, textvariable=self.file_var, wraplength=300)
         self.file_label.grid(row=1, column=0, columnspan=2, sticky="w")
 
-        # Порт
         ttk.Label(self.exploit_frame, text="Порт:").grid(row=3, column=0, padx=10, pady=5, sticky="w")
-        ttk.Entry(self.exploit_frame, textvariable=self.port_var, width=10).grid(row=3, column=1, padx=10, pady=5, sticky="w")
+        self.port_entry = ttk.Entry(self.exploit_frame, textvariable=self.port_var, width=10)
+        self.port_entry.grid(row=3, column=1, padx=10, pady=5, sticky="w")
+        self.setup_entry_context_menu(self.port_entry)
 
-        # Потоки сканирования
         threads_frame = ttk.Frame(self.exploit_frame)
         threads_frame.grid(row=4, column=0, columnspan=2, padx=10, pady=5, sticky="w")
         ttk.Label(threads_frame, text="Потоки сканирования:").grid(row=0, column=0, sticky="w")
-        ttk.Entry(threads_frame, textvariable=self.scan_threads, width=5).grid(row=0, column=1, sticky="w")
+        self.scan_threads_entry = ttk.Entry(threads_frame, textvariable=self.scan_threads, width=5)
+        self.scan_threads_entry.grid(row=0, column=1, sticky="w")
+        self.setup_entry_context_menu(self.scan_threads_entry)
 
-        # Фильтры
         filter_frame = ttk.LabelFrame(self.exploit_frame, text="Фильтры результатов", padding=10)
         filter_frame.grid(row=5, column=0, columnspan=2, padx=10, pady=5, sticky="we")
         ttk.Label(filter_frame, text="Страна:").grid(row=0, column=0, sticky="w")
@@ -268,7 +254,6 @@ class MikroTikScannerGUI:
         self.asn_filter.set("Все")
         ttk.Button(filter_frame, text="Применить фильтры", command=self.apply_filters).grid(row=0, column=4, padx=5)
 
-        # Кнопки эксплойта
         button_frame = ttk.Frame(self.exploit_frame)
         button_frame.grid(row=6, column=0, columnspan=2, pady=5)
         self.start_btn = ttk.Button(button_frame, text="Старт", command=self.start_scan)
@@ -279,11 +264,7 @@ class MikroTikScannerGUI:
         self.stop_btn.pack(side=tk.LEFT, padx=2)
         self.clear_btn = ttk.Button(button_frame, text="Очистить", command=self.clear_output)
         self.clear_btn.pack(side=tk.LEFT, padx=2)
-        self.about_btn = ttk.Button(button_frame, text="О программе", command=self.show_about)
-        self.about_btn.pack(side=tk.LEFT, padx=2)
-        ttk.Button(button_frame, text="Показать статистику", command=self.show_stats).pack(side=tk.LEFT, padx=2)
 
-        # Статус и прогресс сканирования
         status_frame = ttk.Frame(self.exploit_frame)
         status_frame.grid(row=7, column=0, columnspan=2, sticky="we", padx=10, pady=5)
         self.status_label = ttk.Label(status_frame, text="Готов", relief=tk.SUNKEN)
@@ -295,7 +276,6 @@ class MikroTikScannerGUI:
         self.progress_text.pack(side=tk.LEFT)
 
         # --- Правая колонка (Прокси) ---
-        # Настройки прокси
         proxy_frame = ttk.LabelFrame(self.proxy_frame, text="Настройки прокси", padding=10)
         proxy_frame.grid(row=0, column=0, padx=10, pady=5, sticky="we")
 
@@ -303,28 +283,36 @@ class MikroTikScannerGUI:
         ttk.OptionMenu(proxy_frame, self.proxy_type, "socks5", "http", "socks4", "socks5", "all",
                       command=self.update_proxy_fields).grid(row=0, column=1, sticky="w")
 
-        ttk.Label(proxy_frame, text="Прокси (ip:port):").grid(row=1, column=0, sticky="w")
-        self.proxy_entry = ttk.Entry(proxy_frame, textvariable=self.proxy_var, width=20)
-        self.proxy_entry.grid(row=1, column=1, sticky="w")
-        self.setup_entry_context_menu(self.proxy_entry)  # Добавляем контекстное меню
+        ttk.Label(proxy_frame, text="IP прокси:").grid(row=1, column=0, sticky="w")
+        self.proxy_ip_entry = ttk.Entry(proxy_frame, textvariable=self.proxy_ip_var, width=20)
+        self.proxy_ip_entry.grid(row=1, column=1, sticky="w")
+        self.setup_entry_context_menu(self.proxy_ip_entry)
+
+        ttk.Label(proxy_frame, text="Порт прокси:").grid(row=1, column=2, sticky="w")
+        self.proxy_port_entry = ttk.Entry(proxy_frame, textvariable=self.proxy_port_var, width=10)
+        self.proxy_port_entry.grid(row=1, column=3, sticky="w")
+        self.setup_entry_context_menu(self.proxy_port_entry)
 
         ttk.Label(proxy_frame, text="Логин:").grid(row=2, column=0, sticky="w")
         self.proxy_user_entry = ttk.Entry(proxy_frame, textvariable=self.proxy_user)
         self.proxy_user_entry.grid(row=2, column=1, sticky="w")
-        self.setup_entry_context_menu(self.proxy_user_entry)  # Добавляем контекстное меню
+        self.setup_entry_context_menu(self.proxy_user_entry)
 
         ttk.Label(proxy_frame, text="Пароль:").grid(row=2, column=2, sticky="w")
         self.proxy_pass_entry = ttk.Entry(proxy_frame, textvariable=self.proxy_pass)
         self.proxy_pass_entry.grid(row=2, column=3, sticky="w")
-        self.setup_entry_context_menu(self.proxy_pass_entry)  # Добавляем контекстное меню
+        self.setup_entry_context_menu(self.proxy_pass_entry)
 
-        # Потоки проверки прокси
+        ttk.Checkbutton(proxy_frame, text="Сканировать уязвимости через этот прокси", 
+                       variable=self.use_proxy_for_scan).grid(row=3, column=0, columnspan=4, sticky="w")
+
         proxy_threads_frame = ttk.Frame(self.proxy_frame)
         proxy_threads_frame.grid(row=1, column=0, padx=10, pady=5, sticky="we")
         ttk.Label(proxy_threads_frame, text="Потоки проверки прокси:").grid(row=0, column=0, sticky="w")
-        ttk.Entry(proxy_threads_frame, textvariable=self.proxy_threads, width=5).grid(row=0, column=1, sticky="w")
+        self.proxy_threads_entry = ttk.Entry(proxy_threads_frame, textvariable=self.proxy_threads, width=5)
+        self.proxy_threads_entry.grid(row=0, column=1, sticky="w")
+        self.setup_entry_context_menu(self.proxy_threads_entry)
 
-        # Кнопки прокси
         proxy_button_frame = ttk.Frame(self.proxy_frame)
         proxy_button_frame.grid(row=2, column=0, pady=5, sticky="we")
         self.test_proxy_btn = ttk.Button(proxy_button_frame, text="Тест прокси", command=self.test_current_proxy)
@@ -335,8 +323,9 @@ class MikroTikScannerGUI:
         self.pause_proxy_test_btn.pack(side=tk.LEFT, padx=2)
         self.cancel_proxy_test_btn = ttk.Button(proxy_button_frame, text="Отмена теста прокси", command=self.cancel_proxy_test, state=tk.DISABLED)
         self.cancel_proxy_test_btn.pack(side=tk.LEFT, padx=2)
+        self.about_btn = ttk.Button(proxy_button_frame, text="О программе", command=self.show_about)
+        self.about_btn.pack(side=tk.RIGHT, padx=2)
 
-        # Статус и прогресс проверки прокси
         proxy_status_frame = ttk.Frame(self.proxy_frame)
         proxy_status_frame.grid(row=3, column=0, sticky="we", padx=10, pady=5)
         self.proxy_status_label = ttk.Label(proxy_status_frame, text="Готов", relief=tk.SUNKEN)
@@ -347,9 +336,7 @@ class MikroTikScannerGUI:
         self.proxy_progress_text = ttk.Label(proxy_status_frame, text="0%", width=5)
         self.proxy_progress_text.pack(side=tk.LEFT)
 
-        # Изображение fon.png
         try:
-            # Определяем путь к fon.png
             if getattr(sys, 'frozen', False):
                 base_path = sys._MEIPASS
             else:
@@ -363,43 +350,33 @@ class MikroTikScannerGUI:
             self.proxy_frame.bind("<Configure>", self.resize_image)
         except Exception as e:
             self.log_queue.put((f"Ошибка загрузки изображения fon.png: {str(e)}", "error"))
-            # Создаём заглушку вместо изображения
             self.fon_label = ttk.Label(self.proxy_frame, text="Не удалось загрузить изображение")
             self.fon_label.grid(row=4, column=0, padx=10, pady=5, sticky="nsew")
 
-        # --- Нижняя часть (Вывод и предупреждение) ---
         output_frame = ttk.Frame(self.main_frame)
         output_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
         output_frame.columnconfigure(0, weight=1)
         output_frame.rowconfigure(0, weight=1)
 
-        # Вывод
         self.output_text = scrolledtext.ScrolledText(output_frame, wrap=tk.WORD, height=15, font=('Consolas', 10), undo=True)
         self.output_text.grid(row=0, column=0, padx=10, pady=5, sticky="nsew")
         self.output_text.tag_config("error", foreground="red")
         self.output_text.tag_config("success", foreground="green")
         self.output_text.tag_config("info", foreground="blue")
         self.output_text.tag_config("warning", foreground="orange")
+        self.setup_context_menu()
 
-        # Предупреждение
         warning_label = ttk.Label(output_frame, text="Запрещено использование без согласия владельца оборудования!",
                                  foreground="red", font=('Arial', 12, 'bold'))
         warning_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
 
-        # Разрешаем копирование текста
-        self.output_text.bind("<Control-c>", self.copy_text)
-        self.setup_context_menu()
-
         self.toggle_input_mode()
 
     def resize_image(self, event):
-        # Масштабирование изображения с учётом размеров proxy_frame
         if hasattr(self, 'fon_image'):
-            # Получаем размеры proxy_frame
-            new_width = self.proxy_frame.winfo_width() - 20  # Учитываем padding
-            new_height = self.proxy_frame.winfo_height() - self.proxy_frame.winfo_children()[0].winfo_height() - self.proxy_frame.winfo_children()[1].winfo_height() - self.proxy_frame.winfo_children()[2].winfo_height() - self.proxy_frame.winfo_children()[3].winfo_height() - 40  # Вычитаем высоту других виджетов
+            new_width = self.proxy_frame.winfo_width() - 20
+            new_height = self.proxy_frame.winfo_height() - self.proxy_frame.winfo_children()[0].winfo_height() - self.proxy_frame.winfo_children()[1].winfo_height() - self.proxy_frame.winfo_children()[2].winfo_height() - self.proxy_frame.winfo_children()[3].winfo_height() - 40
             if new_width > 0 and new_height > 0:
-                # Сохраняем пропорции изображения
                 orig_width, orig_height = self.fon_image.size
                 ratio = min(new_width / orig_width, new_height / orig_height)
                 resized_width = int(orig_width * ratio)
@@ -412,44 +389,89 @@ class MikroTikScannerGUI:
         self.root.bind('<Control-s>', lambda e: self.start_scan())
         self.root.bind('<Control-p>', lambda e: self.toggle_pause_scan())
         self.root.bind('<Control-t>', lambda e: self.test_current_proxy())
-        self.root.bind('<Control-c>', lambda e: self.copy_text())
-        self.root.bind('<Control-v>', lambda e: self.paste_text())  # Добавляем привязку для Ctrl+V
         self.root.bind('<Control-q>', lambda e: self.quit_application())
 
     def setup_context_menu(self):
         self.context_menu = tk.Menu(self.output_text, tearoff=0)
         self.context_menu.add_command(label="Копировать", command=self.copy_text)
+        self.context_menu.add_command(label="Вставить", command=self.paste_text)
+        self.context_menu.add_command(label="Вырезать", command=self.cut_text)
+        self.context_menu.add_command(label="Выделить всё", command=self.select_all_text)
         self.output_text.bind("<Button-3>", self.show_context_menu)
 
     def setup_entry_context_menu(self, entry):
         context_menu = tk.Menu(entry, tearoff=0)
-        context_menu.add_command(label="Вставить", command=lambda: self.paste_text())
+        context_menu.add_command(label="Копировать", command=lambda: self.copy_text(entry=entry))
+        context_menu.add_command(label="Вставить", command=lambda: self.paste_text(entry=entry))
+        context_menu.add_command(label="Вырезать", command=lambda: self.cut_text(entry=entry))
+        context_menu.add_command(label="Выделить всё", command=lambda: self.select_all_text(entry=entry))
         entry.bind("<Button-3>", lambda event: context_menu.post(event.x_root, event.y_root))
+        entry.bind("<Double-Button-1>", lambda event: self.select_all_text(entry=entry))
+        entry.bind("<Control-a>", lambda event: self.select_all_text(entry=entry))
+        entry.bind("<Control-c>", lambda event: self.copy_text(entry=entry))
+        entry.bind("<Control-x>", lambda event: self.cut_text(entry=entry))
+        entry.bind("<Control-v>", lambda event: self.paste_text(entry=entry))
 
     def show_context_menu(self, event):
         self.context_menu.post(event.x_root, event.y_root)
 
-    def copy_text(self, event=None):
+    def copy_text(self, event=None, entry=None):
         try:
-            selected_text = self.output_text.selection_get()
-            self.root.clipboard_clear()
-            self.root.clipboard_append(selected_text)
+            if entry:
+                selected_text = entry.selection_get()
+                self.root.clipboard_clear()
+                self.root.clipboard_append(selected_text)
+            else:
+                selected_text = self.output_text.selection_get()
+                self.root.clipboard_clear()
+                self.root.clipboard_append(selected_text)
             self.log_queue.put(("Текст скопирован в буфер обмена", "info"))
         except tk.TclError:
             self.log_queue.put(("Ошибка: Ничего не выделено для копирования", "warning"))
         return "break"
 
-    def paste_text(self, event=None):
+    def paste_text(self, event=None, entry=None):
         try:
-            widget = self.root.focus_get()  # Получаем виджет, который в фокусе
-            if isinstance(widget, (tk.Entry, ttk.Entry)):  # Проверяем, что это поле ввода
-                widget.delete(0, tk.END)  # Очищаем текущее содержимое
-                widget.insert(0, self.root.clipboard_get())  # Вставляем текст из буфера
-                self.log_queue.put(("Текст вставлен из буфера обмена", "info"))
+            if entry:
+                entry.delete(0, tk.END)
+                entry.insert(0, self.root.clipboard_get())
             else:
-                self.log_queue.put(("Ошибка: Фокус не на поле ввода", "warning"))
+                widget = self.root.focus_get()
+                if isinstance(widget, (tk.Entry, ttk.Entry)):
+                    widget.delete(0, tk.END)
+                    widget.insert(0, self.root.clipboard_get())
+                else:
+                    self.log_queue.put(("Ошибка: Фокус не на поле ввода", "warning"))
+                    return
+            self.log_queue.put(("Текст вставлен из буфера обмена", "info"))
         except tk.TclError:
             self.log_queue.put(("Ошибка: Буфер обмена пуст", "warning"))
+        return "break"
+
+    def cut_text(self, event=None, entry=None):
+        try:
+            if entry:
+                selected_text = entry.selection_get()
+                self.root.clipboard_clear()
+                self.root.clipboard_append(selected_text)
+                entry.delete(tk.SEL_FIRST, tk.SEL_LAST)
+            else:
+                selected_text = self.output_text.selection_get()
+                self.root.clipboard_clear()
+                self.root.clipboard_append(selected_text)
+                self.output_text.delete(tk.SEL_FIRST, tk.SEL_LAST)
+            self.log_queue.put(("Текст вырезан в буфер обмена", "info"))
+        except tk.TclError:
+            self.log_queue.put(("Ошибка: Ничего не выделено для вырезания", "warning"))
+        return "break"
+
+    def select_all_text(self, event=None, entry=None):
+        if entry:
+            entry.select_range(0, tk.END)
+            entry.icursor(tk.END)
+        else:
+            self.output_text.tag_add(tk.SEL, "1.0", tk.END)
+            self.output_text.mark_set(tk.INSERT, tk.END)
         return "break"
 
     def toggle_input_mode(self):
@@ -460,7 +482,8 @@ class MikroTikScannerGUI:
     def update_proxy_fields(self, *args):
         proxy_type = self.proxy_type.get()
         state = 'normal'
-        self.proxy_entry.config(state=state)
+        self.proxy_ip_entry.config(state=state)
+        self.proxy_port_entry.config(state=state)
         self.proxy_user_entry.config(state=state)
         self.proxy_pass_entry.config(state=state)
 
@@ -499,12 +522,10 @@ class MikroTikScannerGUI:
         self.output_text.update_idletasks()
 
     def check_queues(self):
-        # Проверяем очередь логов
         while not self.log_queue.empty():
             message, tag = self.log_queue.get_nowait()
             self.log_message(message, tag)
 
-        # Проверяем очередь прогресса сканирования
         while not self.progress_queue.empty():
             value, text = self.progress_queue.get_nowait()
             self.progress_var.set(value)
@@ -513,7 +534,6 @@ class MikroTikScannerGUI:
                 self.status_label.config(text=text)
             self.root.update_idletasks()
 
-        # Проверяем очередь прогресса проверки прокси
         while not self.proxy_progress_queue.empty():
             value, text = self.proxy_progress_queue.get_nowait()
             self.proxy_progress_var.set(value)
@@ -522,7 +542,6 @@ class MikroTikScannerGUI:
                 self.proxy_status_label.config(text=text)
             self.root.update_idletasks()
 
-        # Планируем следующую проверку
         self.root.after(100, self.check_queues)
 
     def get_full_path(self, filename):
@@ -540,7 +559,8 @@ class MikroTikScannerGUI:
     def create_socket(self, timeout=5, proxy_info=None):
         if proxy_info:
             proxy_type = proxy_info['type']
-            proxy_host, proxy_port = proxy_info['host'].split(":")
+            proxy_host = proxy_info['host']
+            proxy_port = proxy_info['port']
             proxy_user = proxy_info['user']
             proxy_pass = proxy_info['pass']
 
@@ -592,8 +612,6 @@ class MikroTikScannerGUI:
         self.successful_ips = []
         self.geo_data.clear()
         self.router_versions.clear()
-        self.vulnerable_timestamps.clear()
-        self.non_vulnerable_timestamps.clear()
         ip = self.ip_var.get()
         port = self.port_var.get()
         file = self.file_var.get()
@@ -693,17 +711,20 @@ class MikroTikScannerGUI:
                 geo_info = self.get_geo_info(ip_str)
                 self.geo_data[ip_str] = geo_info
 
-                proxy_info = {
-                    'type': self.proxy_type.get(),
-                    'host': self.proxy_var.get(),
-                    'user': self.proxy_user.get(),
-                    'pass': self.proxy_pass.get()
-                }
-                theSocket = self.create_socket(proxy_info=proxy_info if self.proxy_var.get() else None)
+                proxy_info = None
+                if self.use_proxy_for_scan.get() and self.proxy_ip_var.get() and self.proxy_port_var.get():
+                    proxy_info = {
+                        'type': self.proxy_type.get(),
+                        'host': self.proxy_ip_var.get(),
+                        'port': self.proxy_port_var.get(),
+                        'user': self.proxy_user.get(),
+                        'pass': self.proxy_pass.get()
+                    }
 
-                if self.proxy_type.get() == "http" and self.proxy_var.get():
-                    proxy_host, proxy_port = self.proxy_var.get().split(":")
-                    theSocket.connect((proxy_host, int(proxy_port)))
+                theSocket = self.create_socket(proxy_info=proxy_info)
+
+                if proxy_info and self.proxy_type.get() == "http":
+                    theSocket.connect((self.proxy_ip_var.get(), int(self.proxy_port_var.get())))
                     theSocket.send(f"CONNECT {ip_str}:{port} HTTP/1.1\r\n\r\n".encode())
                     response = theSocket.recv(1024)
                     if not response.startswith(b"HTTP/1.1 200"):
@@ -725,10 +746,9 @@ class MikroTikScannerGUI:
                     raise ValueError("Недостаточно данных для анализа")
 
                 version = self.detect_router_version(result)
-                self.router_versions[version] += 1
+                self.router_versions[version] = self.router_versions.get(version, 0) + 1
 
                 user_pass = self.get_pair(result[55:])
-                current_time = datetime.now()
                 if user_pass:
                     self.log_queue.put((f"\n=== Успех: {ip_str} ===", "success"))
                     self.log_queue.put((f"Версия: {version}", "success"))
@@ -739,9 +759,6 @@ class MikroTikScannerGUI:
                         self.log_queue.put((f"Пользователь: {u}\nПароль: {p}", "success"))
                     self.save_successful_result(ip_str, result[55:], geo_info, version)
                     self.successful_ips.append(ip_str)
-                    self.vulnerable_timestamps.append(current_time)
-                else:
-                    self.non_vulnerable_timestamps.append(current_time)
 
                 self.update_progress(
                     (self.scanned_count / self.total_count) * 100,
@@ -750,7 +767,6 @@ class MikroTikScannerGUI:
 
             except Exception as e:
                 self.log_queue.put((f"{ip_str}: Ошибка: {str(e)}", "error"))
-                self.non_vulnerable_timestamps.append(datetime.now())
             finally:
                 try:
                     theSocket.close()
@@ -765,7 +781,6 @@ class MikroTikScannerGUI:
         self.log_queue.put((f"Время выполнения: {elapsed}", "info"))
         self.log_queue.put((f"Найдено устройств: {len(self.successful_ips)}", "info"))
 
-        # Обновляем списки стран и ASN для фильтров
         countries = set()
         asns = set()
         for ip in self.geo_data:
@@ -865,15 +880,17 @@ class MikroTikScannerGUI:
 
         return {
             'type': protocol,
-            'host': f"{host}:{port}",
+            'host': host,
+            'port': port,
             'user': username,
             'pass': password
         }
 
     def test_current_proxy(self):
-        proxy = self.proxy_var.get()
-        if not proxy or ":" not in proxy:
-            self.log_queue.put(("Ошибка: Неверный формат прокси (должен быть ip:port)", "error"))
+        proxy_ip = self.proxy_ip_var.get()
+        proxy_port = self.proxy_port_var.get()
+        if not proxy_ip or not proxy_port:
+            self.log_queue.put(("Ошибка: Укажите IP и порт прокси", "error"))
             return
 
         proxy_types = ["http", "socks4", "socks5"] if self.proxy_type.get() == "all" else [self.proxy_type.get()]
@@ -881,13 +898,14 @@ class MikroTikScannerGUI:
         for p_type in proxy_types:
             proxy_info = {
                 'type': p_type,
-                'host': proxy,
+                'host': proxy_ip,
+                'port': proxy_port,
                 'user': self.proxy_user.get(),
                 'pass': self.proxy_pass.get()
             }
 
             self.log_queue.put((f"\n=== Тестирование прокси {p_type.upper()} ===", "info"))
-            self.log_queue.put((f"Адрес: {proxy}", "info"))
+            self.log_queue.put((f"Адрес: {proxy_ip}:{proxy_port}", "info"))
             if proxy_info['user']:
                 self.log_queue.put((f"Аутентификация: {proxy_info['user']}:[скрыто]", "info"))
 
@@ -898,10 +916,8 @@ class MikroTikScannerGUI:
                 ping = int((time.time() - start_time) * 1000)
                 test_socket.close()
                 self.log_queue.put((f"Прокси рабочий! Пинг: {ping}мс", "success"))
-                self.valid_proxy_timestamps.append(datetime.now())
             except Exception as e:
                 self.log_queue.put((f"Ошибка тестирования прокси: {str(e)}", "error"))
-                self.invalid_proxy_timestamps.append(datetime.now())
             finally:
                 self.log_queue.put(("=== Тестирование прокси завершено ===", "info"))
 
@@ -1001,9 +1017,8 @@ class MikroTikScannerGUI:
                     result_text = f"[ВАЛИДНЫЙ] {p_type.upper()} {proxy} | Пинг: {ping}мс"
                     self.log_queue.put((result_text, "success"))
                     ping_times.append(ping)
-                    proxy_str = f"{p_type}://{proxy_info['user']}:{proxy_info['pass']}@{proxy_info['host']}" if proxy_info['user'] else f"{p_type}://{proxy_info['host']}"
+                    proxy_str = f"{p_type}://{proxy_info['user']}:{proxy_info['pass']}@{proxy_info['host']}:{proxy_info['port']}" if proxy_info['user'] else f"{p_type}://{proxy_info['host']}:{proxy_info['port']}"
                     valid_proxies.append(proxy_str)
-                    self.valid_proxy_timestamps.append(datetime.now())
                     is_valid = True
                     break
                 except Exception as e:
@@ -1012,7 +1027,6 @@ class MikroTikScannerGUI:
 
             if not is_valid:
                 invalid_proxies.append(proxy)
-                self.invalid_proxy_timestamps.append(datetime.now())
 
             self.update_proxy_progress(
                 (len(valid_proxies) + len(invalid_proxies)) / total * 100,
@@ -1050,146 +1064,8 @@ class MikroTikScannerGUI:
                         if ip in line:
                             self.log_message("".join(lines[i:i+7]), "success")
 
-    def show_stats(self):
-        stats_window = tk.Toplevel(self.root)
-        stats_window.title("Статистика")
-        stats_window.minsize(600, 400)
-
-        # Выпадающее меню для выбора формата времени
-        time_frame = ttk.Frame(stats_window)
-        time_frame.pack(fill=tk.X, padx=10, pady=5)
-        ttk.Label(time_frame, text="Группировать по:").pack(side=tk.LEFT)
-        time_format_menu = ttk.OptionMenu(time_frame, self.stats_time_format, "day", "day", "hour", command=lambda _: self.update_stats(stats_window))
-        time_format_menu.pack(side=tk.LEFT, padx=5)
-
-        # Место для графика
-        self.stats_canvas = ttk.Frame(stats_window)
-        self.stats_canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
-        # Начальное отображение графика
-        self.update_stats(stats_window)
-
-    def update_stats(self, stats_window):
-        # Очищаем предыдущий график
-        for widget in self.stats_canvas.winfo_children():
-            widget.destroy()
-
-        # Проверяем, есть ли данные для отображения
-        if not any([self.vulnerable_timestamps, self.non_vulnerable_timestamps, self.valid_proxy_timestamps, self.invalid_proxy_timestamps]):
-            label = ttk.Label(self.stats_canvas, text="Нет данных для отображения. Выполните сканирование или тест прокси.", foreground="red")
-            label.pack(pady=20)
-            return
-
-        # Формируем временные метки
-        time_format = "%Y-%m-%d" if self.stats_time_format.get() == "day" else "%Y-%m-%d %H:00"
-        time_labels = []
-        vulnerable_counts = defaultdict(int)
-        non_vulnerable_counts = defaultdict(int)
-        valid_proxy_counts = defaultdict(int)
-        invalid_proxy_counts = defaultdict(int)
-
-        for ts in self.vulnerable_timestamps:
-            time_key = ts.strftime(time_format)
-            vulnerable_counts[time_key] += 1
-            if time_key not in time_labels:
-                time_labels.append(time_key)
-
-        for ts in self.non_vulnerable_timestamps:
-            time_key = ts.strftime(time_format)
-            non_vulnerable_counts[time_key] += 1
-            if time_key not in time_labels:
-                time_labels.append(time_key)
-
-        for ts in self.valid_proxy_timestamps:
-            time_key = ts.strftime(time_format)
-            valid_proxy_counts[time_key] += 1
-            if time_key not in time_labels:
-                time_labels.append(time_key)
-
-        for ts in self.invalid_proxy_timestamps:
-            time_key = ts.strftime(time_format)
-            invalid_proxy_counts[time_key] += 1
-            if time_key not in time_labels:
-                time_labels.append(time_key)
-
-        time_labels.sort()
-
-        # Подготовка данных для графика
-        x_vulnerable = []
-        y_vulnerable = []
-        x_non_vulnerable = []
-        y_non_vulnerable = []
-        x_valid_proxy = []
-        y_valid_proxy = []
-        x_invalid_proxy = []
-        y_invalid_proxy = []
-
-        for time_label in time_labels:
-            if time_label in vulnerable_counts:
-                x_vulnerable.append(1)  # Уязвимые устройства (+1)
-                y_vulnerable.append(vulnerable_counts[time_label])
-            if time_label in non_vulnerable_counts:
-                x_non_vulnerable.append(-1)  # Неуязвимые устройства (-1)
-                y_non_vulnerable.append(non_vulnerable_counts[time_label])
-            if time_label in valid_proxy_counts:
-                x_valid_proxy.append(1)  # Валидные прокси (+1)
-                y_valid_proxy.append(valid_proxy_counts[time_label])
-            if time_label in invalid_proxy_counts:
-                x_invalid_proxy.append(-1)  # Невалидные прокси (-1)
-                y_invalid_proxy.append(invalid_proxy_counts[time_label])
-
-        # Создаём график
-        fig, ax = plt.subplots(figsize=(10, 6))
-
-        # Линии
-        has_data = False
-        if x_vulnerable:
-            ax.plot(x_vulnerable, y_vulnerable, color='blue', label='Уязвимые устройства', marker='o')
-            has_data = True
-        if x_non_vulnerable:
-            ax.plot(x_non_vulnerable, y_non_vulnerable, color='darkred', label='Неуязвимые устройства', marker='o')
-            has_data = True
-        if x_valid_proxy:
-            ax.plot(x_valid_proxy, y_valid_proxy, color='green', label='Валидные прокси', marker='o')
-            has_data = True
-        if x_invalid_proxy:
-            ax.plot(x_invalid_proxy, y_invalid_proxy, color='red', label='Невалидные прокси', marker='o')
-            has_data = True
-
-        # Настройки графика
-        ax.set_xlabel("Статус (1 = Уязвимые/Валид_REVISION_1.0ные, -1 = Неуязвимые/Невалидные)")
-        ax.set_ylabel("Количество")
-        ax.set_title("Статистика по времени")
-        ax.grid(True)
-        if has_data:
-            ax.legend()
-        ax.set_xticks([-1, 1])
-        ax.set_xticklabels(["Неуязвимые/Невалидные (-1)", "Уязвимые/Валидные (1)"])
-
-        # Добавляем временные метки как аннотации
-        for i, time_label in enumerate(time_labels):
-            if time_label in vulnerable_counts:
-                ax.annotate(time_label, (1, vulnerable_counts[time_label]), textcoords="offset points", xytext=(0,10), ha='center')
-            if time_label in non_vulnerable_counts:
-                ax.annotate(time_label, (-1, non_vulnerable_counts[time_label]), textcoords="offset points", xytext=(0,10), ha='center')
-            if time_label in valid_proxy_counts:
-                ax.annotate(time_label, (1, valid_proxy_counts[time_label]), textcoords="offset points", xytext=(0,-15), ha='center')
-            if time_label in invalid_proxy_counts:
-                ax.annotate(time_label, (-1, invalid_proxy_counts[time_label]), textcoords="offset points", xytext=(0,-15), ha='center')
-
-        plt.tight_layout()
-        plt.savefig('stats.png')
-        plt.close()
-
-        # Отображаем график
-        img = Image.open("stats.png")
-        photo = ImageTk.PhotoImage(img)
-        label = ttk.Label(self.stats_canvas, image=photo)
-        label.image = photo
-        label.pack(fill=tk.BOTH, expand=True)
-
 if __name__ == "__main__":
     root = tk.Tk()
     app = MikroTikScannerGUI(root)
-    root.protocol("WM_DELETE_WINDOW", app.quit_application)  # Обрабатываем закрытие окна
+    root.protocol("WM_DELETE_WINDOW", app.quit_application)
     root.mainloop()
