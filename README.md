@@ -163,6 +163,7 @@
 - Репозиторий: [https://github.com/nebbbes/Mikrotik_Checker](https://github.com/nebbbes/Mikrotik_Checker)
 
 ## Скриншот
-![screenshot](https://github.com/user-attachments/assets/4af1a398-a5bc-4663-b98a-b762f62b2765)
+![Screenshot_197](https://github.com/user-attachments/assets/6fbb17c6-16f3-473c-a4f2-7ef89edb8784)
+
 
 ⚠️ **Напоминание**: Используйте инструмент только с разрешения владельцев оборудования!
