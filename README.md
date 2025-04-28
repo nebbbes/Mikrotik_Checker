@@ -169,8 +169,8 @@
 - Репозиторий: [https://github.com/nebbbes/Mikrotik_Checker](https://github.com/nebbbes/Mikrotik_Checker)
 
 ## Скриншот
-⚠️ **Примечание**: Текущий скриншот (`Screenshot_197`) устарел и не отражает последних изменений интерфейса (например, новое расположение статуса сканирования и оставшегося времени). Рекомендуется обновить скриншот, запустив программу и сделав новый снимок экрана.
 
-![Screenshot_197](https://github.com/user-attachments/assets/6fbb17c6-16f3-473c-a4f2-7ef89edb8784)
+![Screenshot_202](https://github.com/user-attachments/assets/2c2ec8b8-3fb9-4878-8367-4ed4fb194343)
+
 
 ⚠️ **Напоминание**: Используйте инструмент только с разрешения владельцев оборудования!
